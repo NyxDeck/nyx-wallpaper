@@ -33,8 +33,8 @@ PluginComponent {
         PillContent {}
     }
 
-    popoutWidth: 480
-    popoutHeight: 660
+    popoutWidth: 420
+    popoutHeight: 520
     popoutContent: Component {
         NyxWallpaperPanel {}
     }

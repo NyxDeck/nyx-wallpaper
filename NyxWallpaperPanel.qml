@@ -8,86 +8,115 @@ import qs.Widgets
 
 // Popout content for the nyxWallpaper plugin.
 //
-// One chain, from browsing to downloading to applying. DMS' own picker only
-// knows still images; the library on disk has both, so the panel gets two
-// levels: All / Static / Live on top, the subfolders the files actually live in
-// underneath. The sources that can be downloaded live in the same panel, so a
-// collection you do not have yet is one click away from the tab it will appear
-// in.
+// Deliberately small. Browsing wallpapers is already solved twice over: DMS'
+// own picker (still images only) and the GTK picker on Mod+W, which is ours and
+// handles live video too. What is *not* solved anywhere else is reachable from
+// the bar, so this panel only holds that: the current wallpaper, a way to jump
+// to the next one, a way to get to the picker in one click, and the download
+// chain for collections.
 Item {
     id: panel
 
     readonly property int pad: Theme.spacingM
     readonly property string cli: SettingsData.getPluginSetting("nyxWallpaper", "cli", "")
                                   || (Quickshell.env("HOME") + "/.local/bin/nyxdeck")
+    readonly property string picker: Paths.strip(Paths.config) + "/niri/scripts/wallpaper-picker.py"
 
-    implicitWidth: 480
+    implicitWidth: 420
     implicitHeight: mainColumn.implicitHeight + pad * 2
 
-    // injected by the popout
     property var closePopout: null
     property var parentPopout: null
 
+    // Local components, same as the mihomo panel uses: DMS ships neither.
+    component Chip: Rectangle {
+        id: chip
+
+        property string label: ""
+        property string icon: ""
+        property bool active: false
+        signal tapped
+
+        implicitWidth: chipRow.implicitWidth + Theme.spacingM * 2
+        implicitHeight: 28
+        radius: 14
+        opacity: chip.enabled ? 1 : 0.5
+
+        color: {
+            if (chipArea.pressed)
+                return active ? Theme.primaryHoverLight : Theme.surfacePressed;
+            if (chipArea.containsMouse)
+                return active ? Theme.primaryHoverLight : Theme.surfaceHover;
+            return active ? Theme.primaryHoverLight : Theme.surfaceLight;
+        }
+
+        Row {
+            id: chipRow
+            anchors.centerIn: parent
+            spacing: Theme.spacingXS
+
+            DankIcon {
+                visible: chip.icon.length > 0
+                name: chip.icon
+                size: Theme.fontSizeSmall
+                color: chip.active ? Theme.primary : Theme.surfaceText
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            StyledText {
+                visible: chip.label.length > 0
+                text: chip.label
+                font.pixelSize: Theme.fontSizeSmall
+                font.weight: chip.active ? Font.Medium : Font.Normal
+                color: chip.active ? Theme.primary : Theme.surfaceText
+                anchors.verticalCenter: parent.verticalCenter
+            }
+        }
+        MouseArea {
+            id: chipArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: chip.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+            onClicked: chip.tapped()
+        }
+    }
+
+    component FieldLabel: StyledText {
+        font.pixelSize: Theme.fontSizeSmall
+        font.weight: Font.Medium
+        color: Theme.surfaceVariantText
+    }
+
     // ── i18n ─────────────────────────────────────────────────────────────────
-    // Terms are the English text; translations/zh_CN.json carries the other
-    // languages. I18n.trFor falls back to the DMS catalogue, then to the term.
     function tr(term, subst) {
         const text = I18n.trFor("nyxWallpaper", term);
         return subst === undefined ? text : text.replace("%1", subst);
     }
 
     // ── state ────────────────────────────────────────────────────────────────
-    property int page: 0                  // 0 all | 1 static | 2 live | 3 sources
-    property string chip: ""              // second level: a subfolder, "" = all
-    property var items: []
-    property var categories: []
     property var sources: []
     property var roots: []
+    property int staticCount: 0
+    property int liveCount: 0
     property string currentWallpaper: ""
+    property bool currentIsLive: false
     property string message: ""
-    property bool busy: false
-
-    readonly property var subfolders: {
-        const ignore = ["all", "static", "live", "wallpapers", "pictures", "图片",
-                        "video", "videos", "mpvpaper", "livewallpaper", "livewallpapers"];
-        const out = [];
-        for (const category of categories) {
-            if (ignore.indexOf(String(category).toLowerCase()) >= 0 || out.indexOf(category) >= 0)
-                continue;
-            out.push(category);
-        }
-        return out;
-    }
-
-    readonly property var visibleItems: {
-        const want = page === 1 ? "static" : (page === 2 ? "live" : "all");
-        return items.filter(item => (want === "all" || item.group === want)
-                                    && (chip === "" || item.category === chip));
-    }
-
-    readonly property int staticCount: items.filter(item => !item.video).length
-    readonly property int liveCount: items.filter(item => item.video).length
-
-    function isCurrent(item) {
-        return currentWallpaper !== ""
-            && (currentWallpaper === item.path || currentWallpaper === item.thumb);
-    }
 
     function refresh() {
-        busy = true;
-        listProc.running = false;
-        listProc.running = true;
         statusProc.running = false;
         statusProc.running = true;
+        listProc.running = false;
+        listProc.running = true;
         currentProc.running = false;
         currentProc.running = true;
     }
 
-    function apply(item) {
+    function next(videoOnly) {
         message = "";
-        applyProc.command = [panel.cli, "wallpaper", "set", item.path];
-        applyProc.running = false;
-        applyProc.running = true;
+        nextProc.command = videoOnly
+            ? [panel.cli, "wallpaper", "next", "--video"]
+            : [panel.cli, "wallpaper", "next"];
+        nextProc.running = false;
+        nextProc.running = true;
     }
 
     function download(name) {
@@ -100,32 +129,36 @@ Item {
     Component.onCompleted: refresh()
 
     Process {
-        id: listProc
-        command: [panel.cli, "wallpaper", "list", "--json"]
+        id: statusProc
+        command: [panel.cli, "wallpaper", "status", "--json"]
         stdout: StdioCollector {
             onStreamFinished: {
-                panel.busy = false;
                 try {
                     const data = JSON.parse(text);
-                    panel.items = data.items || [];
-                    panel.categories = data.categories || [];
+                    panel.sources = data.sources || [];
                     panel.roots = data.roots || [];
+                    panel.staticCount = data.static || 0;
+                    panel.liveCount = data.video || 0;
                 } catch (e) {
-                    panel.message = panel.tr("nyxdeck wallpaper list did not answer with JSON");
+                    panel.message = panel.tr("nyxdeck did not answer with JSON");
                 }
             }
         }
     }
 
     Process {
-        id: statusProc
-        command: [panel.cli, "wallpaper", "status", "--json"]
+        id: listProc
+        command: [panel.cli, "wallpaper", "list", "--json"]
         stdout: StdioCollector {
             onStreamFinished: {
+                // Only used to find out whether what DMS is showing belongs to
+                // a video: for those DMS keeps the still frame, not the file.
                 try {
-                    panel.sources = JSON.parse(text).sources || [];
+                    const items = JSON.parse(text).items || [];
+                    panel.currentIsLive = items.some(item => item.video
+                                                          && item.thumb === panel.currentWallpaper);
                 } catch (e) {
-                    panel.sources = [];
+                    panel.currentIsLive = false;
                 }
             }
         }
@@ -140,9 +173,9 @@ Item {
     }
 
     Process {
-        id: applyProc
+        id: nextProc
         onExited: (code) => {
-            panel.message = code === 0 ? panel.tr("Applied") : panel.tr("Applying failed");
+            panel.message = code === 0 ? panel.tr("Switched") : panel.tr("Switching failed");
             panel.refresh();
         }
     }
@@ -155,307 +188,216 @@ Item {
         }
     }
 
-    ColumnLayout {
+    Column {
         id: mainColumn
 
         width: panel.implicitWidth - panel.pad * 2
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
         anchors.topMargin: panel.pad
-        spacing: Theme.spacingS
+        spacing: Theme.spacingM
 
-        // ── header ───────────────────────────────────────────────────────────
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: Theme.spacingS
+        // ── current wallpaper ────────────────────────────────────────────────
+        Column {
+            width: parent.width
+            spacing: Theme.spacingXS
 
-            DankIcon {
-                name: "photo_library"
-                size: Theme.iconSize
-                color: Theme.primary
+            RowLayout {
+                width: parent.width
+                spacing: Theme.spacingS
+
+                FieldLabel {
+                    text: panel.tr("Wallpapers")
+                    Layout.fillWidth: true
+                }
+
+                Chip {
+                    label: panel.tr("Refresh")
+                    icon: "refresh"
+                    onTapped: panel.refresh()
+                }
             }
 
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 0
+            StyledText {
+                text: panel.currentIsLive
+                      ? panel.tr("A live video wallpaper is running")
+                      : panel.tr("A still wallpaper is set")
+                font.pixelSize: Theme.fontSizeSmall
+                color: Theme.surfaceVariantText
+            }
 
-                StyledText {
-                    text: panel.tr("Wallpapers")
-                    font.pixelSize: Theme.fontSizeMedium
-                    font.weight: Font.Medium
-                    color: Theme.surfaceText
+            Item {
+                width: parent.width
+                height: 112
+                clip: true
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 12
+                    color: Theme.surfaceContainerHigh
+                }
+
+                Image {
+                    anchors.fill: parent
+                    visible: panel.currentWallpaper !== ""
+                    source: panel.currentWallpaper === "" ? "" : ("file://" + panel.currentWallpaper)
+                    sourceSize.width: 840
+                    sourceSize.height: 224
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    cache: false
                 }
 
                 StyledText {
-                    text: panel.tr("%1 static · %2 live", "").replace("%1", panel.staticCount)
-                                                             .replace("%2", panel.liveCount)
+                    anchors.centerIn: parent
+                    visible: panel.currentWallpaper === ""
+                    text: panel.tr("No wallpaper set")
                     font.pixelSize: Theme.fontSizeSmall
                     color: Theme.surfaceVariantText
                 }
             }
 
-            DankButton {
-                text: panel.busy ? panel.tr("Working…") : panel.tr("Refresh")
-                iconName: "refresh"
-                enabled: !panel.busy
-                onClicked: panel.refresh()
+            StyledText {
+                width: parent.width
+                text: panel.tr("%1 static · %2 live in the library", "")
+                        .replace("%1", panel.staticCount).replace("%2", panel.liveCount)
+                font.pixelSize: Theme.fontSizeSmall
+                color: Theme.surfaceVariantText
             }
         }
 
-        // ── first level ──────────────────────────────────────────────────────
-        DankButtonGroup {
-            Layout.fillWidth: true
-            maximumWidth: parent.width
-            size: "small"
-            checkEnabled: false
-            minButtonWidth: Math.floor((parent.width - Theme.spacingS * 3) / 4)
-            currentIndex: panel.page
-            model: [panel.tr("All"), panel.tr("Static"), panel.tr("Live"), panel.tr("Sources")]
-            onSelectionChanged: (index, selected) => {
-                if (!selected || index < 0)
-                    return;
-                panel.page = index;
-                panel.message = "";
+        // ── what only this panel can do ──────────────────────────────────────
+        Column {
+            width: parent.width
+            spacing: Theme.spacingS
+
+            RowLayout {
+                width: parent.width
+                spacing: Theme.spacingS
+
+                Chip {
+                    label: panel.tr("Next wallpaper")
+                    icon: "skip_next"
+                    onTapped: panel.next(false)
+                }
+
+                Chip {
+                    label: panel.tr("Next live")
+                    icon: "movie"
+                    onTapped: panel.next(true)
+                }
+
+                Chip {
+                    label: panel.tr("Open picker")
+                    icon: "grid_view"
+                    onTapped: Quickshell.execDetached([panel.picker])
+                }
+            }
+
+            StyledText {
+                width: parent.width
+                text: panel.tr("Browsing is the picker's job; it handles still and live wallpapers, with categories and search.")
+                font.pixelSize: Theme.fontSizeSmall
+                color: Theme.surfaceVariantText
+                wrapMode: Text.WordWrap
             }
         }
 
-        // ── second level ─────────────────────────────────────────────────────
-        DankFilterChips {
-            Layout.fillWidth: true
-            visible: panel.page < 3 && panel.subfolders.length > 0
-            chipHeight: 28
-            model: [{
-                "value": "",
-                "label": panel.tr("Everything")
-            }].concat(panel.subfolders.map(name => ({
-                "value": name,
-                "label": name
-            })))
-            currentIndex: Math.max(0, [""].concat(panel.subfolders).indexOf(panel.chip))
-            onSelectionChanged: index => {
-                const all = [""].concat(panel.subfolders);
-                panel.chip = all[index] ?? "";
+        // ── download chain ───────────────────────────────────────────────────
+        Column {
+            width: parent.width
+            spacing: Theme.spacingS
+
+            FieldLabel {
+                text: panel.tr("Collections")
             }
-        }
 
-        // ── wallpapers ───────────────────────────────────────────────────────
-        ListView {
-            id: wallpaperList
+            Repeater {
+                model: panel.sources
 
-            Layout.fillWidth: true
-            visible: panel.page < 3
-            height: Math.min(360, Math.max(64, panel.visibleItems.length * 60))
-            clip: true
-            spacing: 2
-            model: panel.visibleItems
-            boundsBehavior: Flickable.StopAtBounds
+                delegate: Rectangle {
+                    required property var modelData
 
-            delegate: Rectangle {
-                required property var modelData
+                    width: mainColumn.width
+                    height: sourceRow.implicitHeight + Theme.spacingS * 2
+                    radius: 10
+                    color: Theme.surfaceContainerHigh
 
-                readonly property bool current: panel.isCurrent(modelData)
+                    RowLayout {
+                        id: sourceRow
 
-                width: wallpaperList.width
-                height: 58
-                radius: 10
-                color: current ? Theme.primaryHoverLight
-                               : (rowMouse.containsMouse ? Theme.surfaceHover : "transparent")
+                        anchors.fill: parent
+                        anchors.margins: Theme.spacingS
+                        spacing: Theme.spacingS
 
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: Theme.spacingXS
-                    anchors.rightMargin: Theme.spacingS
-                    spacing: Theme.spacingS
-
-                    Item {
-                        Layout.preferredWidth: 72
-                        Layout.preferredHeight: 42
-                        Layout.alignment: Qt.AlignVCenter
-
-                        Image {
-                            anchors.fill: parent
-                            visible: !modelData.video || modelData.thumb_ready
-                            source: modelData.video
-                                    ? ("file://" + modelData.thumb)
-                                    : ("file://" + modelData.path)
-                            sourceSize.width: 144
-                            sourceSize.height: 84
-                            fillMode: Image.PreserveAspectCrop
-                            asynchronous: true
-                            cache: false
-                            layer.enabled: true
-                        }
-
-                        DankIcon {
-                            anchors.centerIn: parent
-                            visible: modelData.video && !modelData.thumb_ready
-                            name: "movie"
-                            size: Theme.iconSize
-                            color: Theme.surfaceVariantText
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 0
-
-                        StyledText {
-                            text: modelData.title
-                            font.pixelSize: Theme.fontSizeSmall
-                            font.weight: current ? Font.Medium : Font.Normal
-                            color: Theme.surfaceText
+                        ColumnLayout {
                             Layout.fillWidth: true
-                            elide: Text.ElideRight
+                            spacing: 0
+
+                            StyledText {
+                                text: modelData.name
+                                font.pixelSize: Theme.fontSizeSmall
+                                font.weight: Font.Medium
+                                color: Theme.surfaceText
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                            }
+
+                            StyledText {
+                                text: modelData.installed
+                                      ? panel.tr("Downloaded")
+                                      : (modelData.note || panel.tr("Not downloaded yet"))
+                                font.pixelSize: Theme.fontSizeSmall
+                                color: Theme.surfaceVariantText
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                maximumLineCount: 2
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        Chip {
+                            visible: !modelData.installed
+                            label: panel.tr("Download")
+                            icon: "download"
+                            onTapped: panel.download(modelData.name)
                         }
 
                         StyledText {
-                            text: (modelData.video ? panel.tr("Live") : panel.tr("Static"))
-                                  + "  ·  " + modelData.category
+                            visible: modelData.installed === true
+                            text: panel.tr("Ready")
                             font.pixelSize: Theme.fontSizeSmall
-                            color: Theme.surfaceVariantText
-                            Layout.fillWidth: true
-                            elide: Text.ElideRight
+                            color: Theme.primary
                         }
                     }
-
-                    DankIcon {
-                        visible: current
-                        name: "check"
-                        size: Theme.iconSize
-                        color: Theme.primary
-                    }
                 }
+            }
 
-                MouseArea {
-                    id: rowMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: panel.apply(modelData)
-                }
+            StyledText {
+                width: parent.width
+                visible: panel.sources.length === 0
+                text: panel.tr("No collections configured. Add one with nyxdeck wallpaper sources add.")
+                font.pixelSize: Theme.fontSizeSmall
+                color: Theme.surfaceVariantText
+                wrapMode: Text.WordWrap
+            }
+
+            StyledText {
+                width: parent.width
+                text: panel.tr("Nothing is downloaded until you press Download. New collections land in %1.").replace("%1", panel.roots.length > 0 ? panel.roots[0] : "~/Pictures/Wallpapers")
+                font.pixelSize: Theme.fontSizeSmall
+                color: Theme.surfaceVariantText
+                wrapMode: Text.WordWrap
             }
         }
 
         StyledText {
-            Layout.fillWidth: true
-            visible: panel.page < 3 && panel.visibleItems.length === 0
-            text: panel.tr("Nothing here yet. Sources can be downloaded from the Sources tab.")
-            font.pixelSize: Theme.fontSizeSmall
-            color: Theme.surfaceVariantText
-            wrapMode: Text.WordWrap
-        }
-
-        // ── sources ──────────────────────────────────────────────────────────
-        ListView {
-            id: sourceList
-
-            Layout.fillWidth: true
-            visible: panel.page === 3
-            height: Math.min(320, Math.max(64, panel.sources.length * 74))
-            clip: true
-            spacing: 2
-            model: panel.sources
-            boundsBehavior: Flickable.StopAtBounds
-
-            delegate: Rectangle {
-                required property var modelData
-
-                width: sourceList.width
-                height: 72
-                radius: 10
-                color: Theme.surfaceContainerHigh
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: Theme.spacingS
-                    spacing: Theme.spacingS
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 0
-
-                        StyledText {
-                            text: modelData.name
-                            font.pixelSize: Theme.fontSizeSmall
-                            font.weight: Font.Medium
-                            color: Theme.surfaceText
-                            Layout.fillWidth: true
-                            elide: Text.ElideRight
-                        }
-
-                        StyledText {
-                            text: modelData.installed ? panel.tr("Downloaded")
-                                                      : panel.tr("Not downloaded yet")
-                            font.pixelSize: Theme.fontSizeSmall
-                            color: modelData.installed ? Theme.primary : Theme.surfaceVariantText
-                        }
-
-                        StyledText {
-                            visible: (modelData.note || "").length > 0
-                            text: modelData.note || ""
-                            font.pixelSize: Theme.fontSizeSmall
-                            color: Theme.surfaceVariantText
-                            Layout.fillWidth: true
-                            wrapMode: Text.WordWrap
-                            maximumLineCount: 2
-                            elide: Text.ElideRight
-                        }
-                    }
-
-                    DankButton {
-                        visible: !modelData.installed
-                        text: panel.tr("Download")
-                        iconName: "download"
-                        enabled: !panel.busy
-                        onClicked: panel.download(modelData.name)
-                    }
-
-                    DankIcon {
-                        visible: modelData.installed === true
-                        name: "check_circle"
-                        size: Theme.iconSize
-                        color: Theme.primary
-                    }
-                }
-            }
-        }
-
-        StyledText {
-            Layout.fillWidth: true
-            visible: panel.page === 3 && panel.sources.length === 0
-            text: panel.tr("No sources configured. Add one with nyxdeck wallpaper sources add.")
-            font.pixelSize: Theme.fontSizeSmall
-            color: Theme.surfaceVariantText
-            wrapMode: Text.WordWrap
-        }
-
-        // ── footer ───────────────────────────────────────────────────────────
-        StyledText {
-            Layout.fillWidth: true
+            width: parent.width
             visible: panel.message.length > 0
             text: panel.message
             font.pixelSize: Theme.fontSizeSmall
             color: Theme.primary
             wrapMode: Text.WordWrap
-        }
-
-        StyledText {
-            Layout.fillWidth: true
-            text: panel.page === 3
-                  ? panel.tr("Nothing is downloaded until you press Download.")
-                  : panel.tr("Left click applies. Video goes through mpvpaper, and DMS keeps the palette from a still frame.")
-            font.pixelSize: Theme.fontSizeSmall
-            color: Theme.surfaceVariantText
-            wrapMode: Text.WordWrap
-        }
-
-        StyledText {
-            Layout.fillWidth: true
-            visible: panel.roots.length > 0
-            text: panel.roots.join("  ·  ")
-            font.pixelSize: Theme.fontSizeSmall
-            color: Theme.surfaceVariantText
-            elide: Text.ElideMiddle
         }
     }
 }
