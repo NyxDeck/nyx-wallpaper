@@ -1,0 +1,19 @@
+{
+    "$schema": "https://raw.githubusercontent.com/AvengeMedia/DankMaterialShell/master/quickshell/PLUGINS/plugin-schema.json",
+    "id": "nyxWallpaper",
+    "name": "Nyx Wallpaper",
+    "description": "Browse, download and apply static and live wallpapers: two-level categories, mpvpaper for video, DMS' own pipeline for the palette.",
+    "version": "1.0.0",
+    "author": "NyxDeck",
+    "type": "composite",
+    "capabilities": ["daemon", "dankbar-widget"],
+    "components": {
+        "daemon": "./NyxWallpaperService.qml",
+        "widget": "./NyxWallpaperWidget.qml"
+    },
+    "settings": "./NyxWallpaperSettings.qml",
+    "icon": "photo_library",
+    "requires_dms": ">=1.6.1",
+    "dependencies": ["mpvpaper", "ffmpeg", "git"],
+    "permissions": ["settings_read", "settings_write", "process"]
+}

@@ -1,0 +1,80 @@
+{
+    "%1 static · %2 live": {
+        "%1 static · %2 live": "%1 张静态 · %2 个动态"
+    },
+    "All": {
+        "All": "全部"
+    },
+    "Applied": {
+        "Applied": "已应用"
+    },
+    "Applying failed": {
+        "Applying failed": "应用失败"
+    },
+    "Clear live wallpapers when DMS picks one": {
+        "Clear live wallpapers when DMS picks one": "DMS 自己换壁纸时清掉动态壁纸"
+    },
+    "Download": {
+        "Download": "下载"
+    },
+    "Download failed": {
+        "Download failed": "下载失败"
+    },
+    "Download finished": {
+        "Download finished": "下载完成"
+    },
+    "Downloaded": {
+        "Downloaded": "已下载"
+    },
+    "Downloading %1 …": {
+        "Downloading %1 …": "正在下载 %1 …"
+    },
+    "Everything": {
+        "Everything": "全部"
+    },
+    "Left click applies. Video goes through mpvpaper, and DMS keeps the palette from a still frame.": {
+        "Left click applies. Video goes through mpvpaper, and DMS keeps the palette from a still frame.": "左键点击即应用。视频走 mpvpaper，DMS 的配色取自视频的一帧静图。"
+    },
+    "Live": {
+        "Live": "动态"
+    },
+    "No sources configured. Add one with nyxdeck wallpaper sources add.": {
+        "No sources configured. Add one with nyxdeck wallpaper sources add.": "没有配置资源源。用 nyxdeck wallpaper sources add 添加。"
+    },
+    "Not downloaded yet": {
+        "Not downloaded yet": "未下载"
+    },
+    "Nothing here yet. Sources can be downloaded from the Sources tab.": {
+        "Nothing here yet. Sources can be downloaded from the Sources tab.": "这里还没有内容。可以在「资源」页里下载集合。"
+    },
+    "Nothing is downloaded until you press Download.": {
+        "Nothing is downloaded until you press Download.": "你不按「下载」就不会下载任何东西。"
+    },
+    "Refresh": {
+        "Refresh": "刷新"
+    },
+    "Sources": {
+        "Sources": "资源"
+    },
+    "Static": {
+        "Static": "静态"
+    },
+    "The command that owns the wallpaper chain. Empty means ~/.local/bin/nyxdeck.": {
+        "The command that owns the wallpaper chain. Empty means ~/.local/bin/nyxdeck.": "掌管壁纸链路的命令。留空表示 ~/.local/bin/nyxdeck。"
+    },
+    "Wallpapers": {
+        "Wallpapers": "壁纸"
+    },
+    "When DMS' own picker or cycling sets a still image, stop mpvpaper so that image is actually visible.": {
+        "When DMS' own picker or cycling sets a still image, stop mpvpaper so that image is actually visible.": "当 DMS 自带的选择器或轮播换了静态图时，停掉 mpvpaper，让那张图真的能看见。"
+    },
+    "Working…": {
+        "Working…": "处理中…"
+    },
+    "nyxdeck command": {
+        "nyxdeck command": "nyxdeck 命令"
+    },
+    "nyxdeck wallpaper list did not answer with JSON": {
+        "nyxdeck wallpaper list did not answer with JSON": "nyxdeck wallpaper list 没有返回 JSON"
+    }
+}
